@@ -1,10 +1,8 @@
 """
 Instagram automation bot using instagrapi.
-Handles login, session persistence, and posting images.
+Handles login, session persistence, and story posting.
 """
 
-import os
-import json
 import logging
 from pathlib import Path
 from instagrapi import Client
@@ -46,38 +44,27 @@ class InstagramBot:
         self.client.dump_settings(self.session_file)
         logger.info("Logged in with credentials and session saved.")
 
-    def post_photo(self, image_path: str, caption: str = "") -> str:
-        """Upload a single photo post. Returns the media ID."""
+    def post_story_photo(self, image_path: str) -> str:
+        """Upload a photo story. Returns the media ID."""
         path = Path(image_path)
         if not path.exists():
             raise FileNotFoundError(f"Image not found: {image_path}")
 
-        media = self.client.photo_upload(path, caption=caption)
-        logger.info(f"Photo posted: {media.pk} — {caption[:40]!r}")
+        media = self.client.photo_upload_to_story(path)
+        logger.info(f"Story photo posted: {media.pk}")
         return media.pk
 
-    def post_video(self, video_path: str, caption: str = "") -> str:
-        """Upload a video post (Reel). Returns the media ID."""
+    def post_story_video(self, video_path: str) -> str:
+        """Upload a video story. Returns the media ID."""
         path = Path(video_path)
         if not path.exists():
             raise FileNotFoundError(f"Video not found: {video_path}")
 
-        media = self.client.video_upload(path, caption=caption)
-        logger.info(f"Video posted: {media.pk} — {caption[:40]!r}")
+        media = self.client.video_upload_to_story(path)
+        logger.info(f"Story video posted: {media.pk}")
         return media.pk
 
-    def post_album(self, image_paths: list[str], caption: str = "") -> str:
-        """Upload a carousel (album) post. Returns the media ID."""
-        paths = [Path(p) for p in image_paths]
-        for p in paths:
-            if not p.exists():
-                raise FileNotFoundError(f"Image not found: {p}")
-
-        media = self.client.album_upload(paths, caption=caption)
-        logger.info(f"Album posted: {media.pk} with {len(paths)} images.")
-        return media.pk
-
-    def delete_post(self, media_id: str):
-        """Delete a post by its media ID."""
+    def delete_story(self, media_id: str):
+        """Delete a story by its media ID."""
         self.client.media_delete(media_id)
-        logger.info(f"Deleted post: {media_id}")
+        logger.info(f"Deleted story: {media_id}")

@@ -20,7 +20,7 @@ build/
 # Session / credentials
 sessions/
 *.json
-!posts.example.json
+!*.example.json
 
 # Logs
 logs/

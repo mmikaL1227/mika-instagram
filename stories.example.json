@@ -1,0 +1,14 @@
+[
+  {
+    "image": "uploads/story1.jpg",
+    "schedule": "2026-04-03 09:00"
+  },
+  {
+    "image": "uploads/story2.jpg",
+    "schedule": "2026-04-03 20:00"
+  },
+  {
+    "video": "uploads/story3.mp4",
+    "schedule": "2026-04-04 08:00"
+  }
+]

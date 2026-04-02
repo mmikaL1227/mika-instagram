@@ -1,14 +1,14 @@
 # mika-instagram
 
-Automate Instagram posts with Python — post photos, videos, and carousels immediately or on a schedule.
+Automate Instagram **story** posts with Python — post photos/videos immediately or on a schedule, with AI-generated story ideas.
 
 ## Features
 
-- Post photos, videos (Reels), and carousel albums
-- Schedule posts from a JSON queue file
+- Post photo and video stories
+- Generate story ideas + AI image prompts by niche
+- Schedule stories from a JSON queue file
 - Session persistence (no repeated logins)
 - 2FA (TOTP) support
-- Polite request delays to avoid rate limits
 
 ## Requirements
 
@@ -17,11 +17,13 @@ Automate Instagram posts with Python — post photos, videos, and carousels imme
 
 ## Setup
 
-### 1. Clone & install dependencies
+### 1. Clone & create a virtual environment
 
 ```bash
 git clone https://github.com/mmikal1227/mika-instagram.git
 cd mika-instagram
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -31,14 +33,14 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` with your Instagram username and password:
+Edit `.env`:
 
 ```env
 INSTAGRAM_USERNAME=your_username
 INSTAGRAM_PASSWORD=your_password
 ```
 
-If your account uses **2FA (authenticator app)**, also set:
+If your account uses **2FA**, also set:
 
 ```env
 INSTAGRAM_TOTP_SEED=your_totp_secret_key
@@ -50,52 +52,54 @@ INSTAGRAM_TOTP_SEED=your_totp_secret_key
 mkdir uploads
 ```
 
-Add your images or videos to the `uploads/` folder.
-
 ---
 
 ## Usage
 
-### Post immediately
+### Generate story ideas
 
 ```bash
-# Single photo
-python post_now.py --image uploads/photo.jpg --caption "Hello world! #python"
-
-# Video / Reel
-python post_now.py --video uploads/clip.mp4 --caption "Watch this!"
-
-# Carousel (multiple images)
-python post_now.py --album uploads/1.jpg uploads/2.jpg --caption "Swipe through!"
+python generate_ideas.py --niche "fitness" --count 7
+python generate_ideas.py --niche "food" --count 5 --save ideas.json
 ```
 
-### Scheduled posting
+Each idea includes:
+- A story description
+- An **AI image generation prompt** (paste into Midjourney, DALL-E, etc.)
+- A suggested posting time
 
-1. Copy the example queue file and edit it:
+### Post a story immediately
 
 ```bash
-cp posts.example.json posts.json
+# Photo story (1080x1920 recommended)
+python post_story.py --image uploads/story.jpg
+
+# Video story (MP4, max 15s)
+python post_story.py --video uploads/story.mp4
 ```
 
-2. Edit `posts.json` to set your images, captions, and schedule times:
+### Scheduled story posting
+
+1. Copy and edit the example queue:
+
+```bash
+cp stories.example.json stories.json
+```
+
+2. Edit `stories.json`:
 
 ```json
 [
-  {
-    "image": "uploads/photo1.jpg",
-    "caption": "Good morning! #morning #vibes",
-    "schedule": "2026-03-26 09:00"
-  }
+  { "image": "uploads/story1.jpg", "schedule": "2026-04-03 09:00" },
+  { "video": "uploads/story2.mp4", "schedule": "2026-04-03 20:00" }
 ]
 ```
 
 3. Run the scheduler:
 
 ```bash
-python scheduler.py --posts posts.json
+python scheduler.py --posts stories.json
 ```
-
-The scheduler will run continuously and post at the specified times. Press `Ctrl+C` to stop.
 
 ---
 
@@ -103,24 +107,25 @@ The scheduler will run continuously and post at the specified times. Press `Ctrl
 
 ```
 mika-instagram/
-├── bot.py            # InstagramBot class (login, post, delete)
-├── config.py         # Loads credentials from .env
-├── post_now.py       # CLI for immediate posting
-├── scheduler.py      # Scheduled posting from JSON queue
-├── posts.example.json
-├── .env.example
+├── bot.py                 # InstagramBot (login + story posting)
+├── config.py              # Loads credentials from .env
+├── generate_ideas.py      # Story idea + AI image prompt generator
+├── post_story.py          # CLI for immediate story posting
+├── scheduler.py           # Scheduled posting from JSON queue
+├── stories.example.json   # Example story queue
+├── .env.example           # Credentials template
 ├── requirements.txt
-└── uploads/          # Put your media files here (git-ignored)
+└── uploads/               # Put your story images/videos here
 ```
 
 ---
 
-## Notes & Limitations
+## Notes
 
-- This project uses [instagrapi](https://github.com/subzeroid/instagrapi), an unofficial Instagram private API client.
-- Using unofficial APIs may violate Instagram's Terms of Service. Use responsibly and at your own risk.
-- Do **not** commit your `.env` file or `sessions/` folder — they are in `.gitignore`.
-- Session files are saved to `sessions/session.json` to avoid logging in on every run.
+- Story images should be **1080×1920px (9:16)** for best results.
+- Video stories are capped at **15 seconds**.
+- This uses [instagrapi](https://github.com/subzeroid/instagrapi), an unofficial Instagram API. Use responsibly.
+- Never commit your `.env` or `sessions/` — both are in `.gitignore`.
 
 ---
 
