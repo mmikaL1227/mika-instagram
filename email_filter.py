@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import email
+import email.message
 import imaplib
 import json
 import os
