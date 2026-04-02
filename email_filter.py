@@ -1,8 +1,9 @@
 """
 Namecheap Email Filter & Organizer
 -----------------------------------
-Connects to your Namecheap email via IMAP, uses Claude AI to categorize
-each email, and exports organized data to an Excel (.xlsx) file.
+Connects to your Namecheap email via IMAP, categorizes each email using
+configurable rules (keywords, sender domains, subject patterns), and exports
+organized data to an Excel (.xlsx) file. No API key required.
 
 Usage:
     python email_filter.py
@@ -12,6 +13,7 @@ Usage:
         --folder FOLDER IMAP folder to read from (default: INBOX)
         --output FILE   Output Excel filename (default: email_report.xlsx)
         --since DAYS    Only fetch emails from the last N days (default: 30)
+        --rules FILE    Path to rules JSON file (default: email_rules.json)
 """
 
 import argparse
@@ -19,13 +21,13 @@ import email
 import imaplib
 import json
 import os
+import re
 import ssl
 import sys
 from datetime import datetime, timedelta
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
 
-import anthropic
 import openpyxl
 from dotenv import load_dotenv
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -41,7 +43,6 @@ IMAP_HOST = os.getenv("EMAIL_IMAP_HOST", "mail.privateemail.com")
 IMAP_PORT = int(os.getenv("EMAIL_IMAP_PORT", "993"))
 EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS", "")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 # ---------------------------------------------------------------------------
 # IMAP helpers
@@ -60,7 +61,7 @@ def connect_imap() -> imaplib.IMAP4_SSL:
     return conn
 
 
-def decode_str(value: str | bytes | None) -> str:
+def decode_str(value) -> str:
     """Decode an encoded email header value to a plain string."""
     if value is None:
         return ""
@@ -105,7 +106,7 @@ def fetch_emails(
     folder: str = "INBOX",
     limit: int = 100,
     since_days: int = 30,
-) -> list[dict]:
+) -> list:
     """Fetch the most recent emails from a folder and return as list of dicts."""
     conn.select(folder, readonly=True)
 
@@ -145,8 +146,7 @@ def fetch_emails(
                 "subject": subject,
                 "sender": sender,
                 "date": date_formatted,
-                "body_preview": body[:500],  # shorter preview for AI prompt
-                "body_full": body,
+                "body": body,
             }
         )
 
@@ -157,64 +157,82 @@ def fetch_emails(
 
 
 # ---------------------------------------------------------------------------
-# AI categorization
+# Rule-based categorization
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are an email categorization assistant.
-Given the sender, subject, and a body preview of an email, you must:
-1. Assign a short category label (e.g. "Client Inquiry", "Invoice/Payment",
-   "Newsletter", "Support Request", "Job Application", "Spam", "Internal",
-   "Order/Shipping", "Partnership", "Other").
-2. Assign a priority: High / Medium / Low.
-3. Write a one-sentence summary of what the email is about.
 
-Respond ONLY with a valid JSON object in exactly this format:
-{
-  "category": "<category>",
-  "priority": "<High|Medium|Low>",
-  "summary": "<one sentence>"
-}"""
-
-
-def categorize_email(client: anthropic.Anthropic, em: dict) -> dict:
-    """Use Claude to categorize a single email. Returns updated dict."""
-    prompt = (
-        f"From: {em['sender']}\n"
-        f"Subject: {em['subject']}\n"
-        f"Date: {em['date']}\n"
-        f"Body preview:\n{em['body_preview']}"
-    )
-    try:
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=256,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
+def load_rules(rules_path: str) -> dict:
+    """Load categorization rules from a JSON file."""
+    if not os.path.exists(rules_path):
+        sys.exit(
+            f"ERROR: Rules file not found: {rules_path}\n"
+            "Copy email_rules.json.example to email_rules.json and customize it."
         )
-        result = json.loads(response.content[0].text.strip())
-        em["category"] = result.get("category", "Other")
-        em["priority"] = result.get("priority", "Medium")
-        em["summary"] = result.get("summary", "")
-    except Exception as exc:
-        print(f"  Warning: AI categorization failed for '{em['subject']}': {exc}")
-        em["category"] = "Uncategorized"
-        em["priority"] = "Medium"
-        em["summary"] = ""
+    with open(rules_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _extract_sender_domain(sender: str) -> str:
+    """Extract the domain portion from a sender address like 'Name <user@domain.com>'."""
+    match = re.search(r"@([\w.\-]+)", sender)
+    return match.group(1).lower() if match else ""
+
+
+def _keywords_match(text: str, keywords: list) -> bool:
+    """Return True if any keyword appears in text (case-insensitive)."""
+    text_lower = text.lower()
+    return any(kw.lower() in text_lower for kw in keywords)
+
+
+def categorize_email(em: dict, rules: dict) -> dict:
+    """Apply rules to a single email and set category, priority, and note."""
+    subject = em.get("subject", "")
+    sender = em.get("sender", "")
+    body = em.get("body", "")
+    sender_domain = _extract_sender_domain(sender)
+
+    for rule in rules.get("rules", []):
+        match_cfg = rule.get("match", {})
+        matched = False
+
+        # Sender domain match
+        domains = [d.lower() for d in match_cfg.get("sender_domains", [])]
+        if domains and sender_domain and sender_domain in domains:
+            matched = True
+
+        # Sender address match (full or partial)
+        sender_patterns = match_cfg.get("sender_contains", [])
+        if not matched and sender_patterns and _keywords_match(sender, sender_patterns):
+            matched = True
+
+        # Subject keyword match
+        subject_kws = match_cfg.get("subject_keywords", [])
+        if not matched and subject_kws and _keywords_match(subject, subject_kws):
+            matched = True
+
+        # Body keyword match
+        body_kws = match_cfg.get("body_keywords", [])
+        if not matched and body_kws and _keywords_match(body, body_kws):
+            matched = True
+
+        if matched:
+            em["category"] = rule.get("category", "Other")
+            em["priority"] = rule.get("priority", "Medium")
+            em["note"] = rule.get("note", "")
+            return em
+
+    # No rule matched — use defaults
+    em["category"] = rules.get("default_category", "Other")
+    em["priority"] = rules.get("default_priority", "Medium")
+    em["note"] = ""
     return em
 
 
-def categorize_all(emails: list[dict]) -> list[dict]:
-    """Categorize all emails using the Claude AI API."""
-    if not ANTHROPIC_API_KEY:
-        sys.exit(
-            "ERROR: ANTHROPIC_API_KEY must be set in your .env file to use AI categorization."
-        )
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    print(f"Categorizing {len(emails)} emails with Claude AI...")
-    for i, em in enumerate(emails, 1):
-        emails[i - 1] = categorize_email(client, em)
-        if i % 10 == 0:
-            print(f"  Categorized {i}/{len(emails)}...")
+def categorize_all(emails: list, rules: dict) -> list:
+    """Categorize all emails using the loaded rules."""
+    print(f"Categorizing {len(emails)} emails using rules...")
+    for em in emails:
+        categorize_email(em, rules)
     return emails
 
 
@@ -227,9 +245,9 @@ HEADER_FONT = Font(color="FFFFFF", bold=True, size=11)
 ALT_FILL = PatternFill(start_color="D6E4F0", end_color="D6E4F0", fill_type="solid")
 
 PRIORITY_COLORS = {
-    "High": "FF4444",
-    "Medium": "FFA500",
-    "Low": "4CAF50",
+    "High": "C00000",
+    "Medium": "E36C09",
+    "Low": "375623",
 }
 
 COLUMNS = [
@@ -238,7 +256,8 @@ COLUMNS = [
     ("Subject", 45),
     ("Category", 22),
     ("Priority", 12),
-    ("Summary", 60),
+    ("Note", 40),
+    ("Body Preview", 60),
 ]
 
 
@@ -255,31 +274,32 @@ def _write_header(ws):
 
 
 def _write_row(ws, row_num: int, em: dict):
+    body_preview = em.get("body", "")[:200].replace("\n", " ").strip()
     values = [
         em["date"],
         em["sender"],
         em["subject"],
         em["category"],
         em["priority"],
-        em["summary"],
+        em.get("note", ""),
+        body_preview,
     ]
     ws.append(values)
     fill = ALT_FILL if row_num % 2 == 0 else None
-    priority_color = PRIORITY_COLORS.get(em.get("priority", "Medium"), "FFA500")
+    priority_color = PRIORITY_COLORS.get(em.get("priority", "Medium"), "E36C09")
 
-    for col_idx, _ in enumerate(values, 1):
+    for col_idx in range(1, len(values) + 1):
         cell = ws.cell(row=row_num, column=col_idx)
         cell.alignment = Alignment(vertical="top", wrap_text=True)
         if fill:
             cell.fill = fill
-        # Color the Priority cell
-        if col_idx == 5:
+        if col_idx == 5:  # Priority column
             cell.font = Font(color=priority_color, bold=True)
 
 
-def export_to_excel(emails: list[dict], output_path: str):
+def export_to_excel(emails: list, output_path: str):
     """Write categorized emails to an Excel file with one sheet per category
-    plus an 'All Emails' summary sheet."""
+    plus an 'All Emails' summary sheet and a Stats sheet."""
     wb = openpyxl.Workbook()
     wb.remove(wb.active)  # remove default blank sheet
 
@@ -290,14 +310,14 @@ def export_to_excel(emails: list[dict], output_path: str):
         _write_row(ws_all, i, em)
 
     # --- Per-category sheets ---
-    categories: dict[str, list[dict]] = {}
+    categories: dict = {}
     for em in emails:
         cat = em.get("category", "Other")
         categories.setdefault(cat, []).append(em)
 
     for cat in sorted(categories):
         # Excel sheet names max 31 chars, strip invalid chars
-        safe_name = cat[:31].replace("/", "-").replace("\\", "-").replace("*", "")
+        safe_name = cat[:31].translate(str.maketrans('', '', r'/\*?[]:|'))
         ws = wb.create_sheet(safe_name)
         _write_header(ws)
         for i, em in enumerate(categories[cat], 2):
@@ -306,7 +326,7 @@ def export_to_excel(emails: list[dict], output_path: str):
     # --- Stats sheet ---
     ws_stats = wb.create_sheet("Stats")
     ws_stats.append(["Category", "Count", "High", "Medium", "Low"])
-    for col_idx, width in [(1, 25), (2, 10), (3, 10), (4, 10), (5, 10)]:
+    for col_idx, width in [(1, 28), (2, 10), (3, 10), (4, 10), (5, 10)]:
         ws_stats.column_dimensions[get_column_letter(col_idx)].width = width
     for col_idx in range(1, 6):
         cell = ws_stats.cell(row=1, column=col_idx)
@@ -314,7 +334,7 @@ def export_to_excel(emails: list[dict], output_path: str):
         cell.font = HEADER_FONT
         cell.alignment = Alignment(horizontal="center")
 
-    for cat in sorted(categories):
+    for row_idx, cat in enumerate(sorted(categories), 2):
         items = categories[cat]
         ws_stats.append([
             cat,
@@ -323,6 +343,8 @@ def export_to_excel(emails: list[dict], output_path: str):
             sum(1 for e in items if e.get("priority") == "Medium"),
             sum(1 for e in items if e.get("priority") == "Low"),
         ])
+        # Bold the category name
+        ws_stats.cell(row=row_idx, column=1).font = Font(bold=True)
 
     wb.save(output_path)
     print(f"\nExport complete: {output_path}")
@@ -363,11 +385,18 @@ def parse_args():
         metavar="DAYS",
         help="Only fetch emails from the last N days (default: 30).",
     )
+    parser.add_argument(
+        "--rules",
+        default="email_rules.json",
+        help="Path to rules JSON file (default: email_rules.json).",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+
+    rules = load_rules(args.rules)
 
     print("Connecting to mail server...")
     conn = connect_imap()
@@ -380,7 +409,7 @@ def main():
         print("No emails found matching criteria. Exiting.")
         return
 
-    emails = categorize_all(emails)
+    emails = categorize_all(emails, rules)
     export_to_excel(emails, args.output)
 
 

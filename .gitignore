@@ -21,6 +21,7 @@ build/
 sessions/
 *.json
 !posts.example.json
+!email_rules.json
 
 # Logs
 logs/

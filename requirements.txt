@@ -4,5 +4,4 @@ python-dotenv==1.0.1
 schedule==1.2.2
 
 # Email filtering dependencies
-anthropic>=0.40.0
 openpyxl>=3.1.0

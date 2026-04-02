@@ -1,0 +1,90 @@
+{
+  "_comment": "Rules are evaluated in order — first match wins. Edit/add rules to fit your inbox.",
+
+  "default_category": "Other",
+  "default_priority": "Low",
+
+  "rules": [
+    {
+      "category": "Invoice / Payment",
+      "priority": "High",
+      "note": "Billing-related — check promptly",
+      "match": {
+        "sender_domains": ["paypal.com", "stripe.com", "quickbooks.com", "wave.com", "freshbooks.com", "xero.com"],
+        "subject_keywords": ["invoice", "payment due", "receipt", "your receipt", "bill", "amount due", "overdue", "statement"],
+        "body_keywords": ["invoice #", "amount due", "payment required", "please pay", "due date"]
+      }
+    },
+    {
+      "category": "Client Inquiry",
+      "priority": "High",
+      "note": "Potential or existing client — respond ASAP",
+      "match": {
+        "subject_keywords": ["inquiry", "interested", "quote", "pricing", "how much", "availability", "can you", "i need", "question about"],
+        "body_keywords": ["i am interested", "i would like", "can you help", "please quote", "how much does", "do you offer"]
+      }
+    },
+    {
+      "category": "Order / Shipping",
+      "priority": "Medium",
+      "note": "Order update or shipping notification",
+      "match": {
+        "sender_domains": ["amazon.com", "shopify.com", "etsy.com", "ebay.com", "fedex.com", "ups.com", "usps.com", "dhl.com"],
+        "subject_keywords": ["your order", "order confirmed", "shipped", "out for delivery", "delivered", "tracking", "shipment", "package"]
+      }
+    },
+    {
+      "category": "Support Request",
+      "priority": "High",
+      "note": "Customer needs help",
+      "match": {
+        "subject_keywords": ["help", "issue", "problem", "not working", "broken", "error", "complaint", "urgent", "support", "refund", "broken"],
+        "body_keywords": ["i have a problem", "not working", "please help", "i need help", "error message", "i want a refund"]
+      }
+    },
+    {
+      "category": "Job Application",
+      "priority": "Medium",
+      "note": "Application or resume received",
+      "match": {
+        "subject_keywords": ["application", "applying for", "job application", "resume", "cv", "cover letter", "position", "opening"],
+        "body_keywords": ["i am applying", "please find my resume", "attached my cv", "i am interested in the position"]
+      }
+    },
+    {
+      "category": "Partnership / Collab",
+      "priority": "Medium",
+      "note": "Business partnership or collaboration pitch",
+      "match": {
+        "subject_keywords": ["partnership", "collaboration", "collab", "partner with", "work together", "business proposal", "affiliate", "sponsorship"],
+        "body_keywords": ["would love to partner", "collaboration opportunity", "affiliate program", "sponsorship deal"]
+      }
+    },
+    {
+      "category": "Newsletter",
+      "priority": "Low",
+      "note": "Marketing email or newsletter — low priority",
+      "match": {
+        "sender_contains": ["newsletter", "noreply", "no-reply", "notifications", "mailer", "updates@", "info@mailchimp", "sendgrid"],
+        "subject_keywords": ["newsletter", "weekly digest", "monthly update", "subscribe", "unsubscribe", "sale", "deal", "% off", "exclusive offer"],
+        "body_keywords": ["unsubscribe", "view in browser", "you are receiving this because", "manage preferences"]
+      }
+    },
+    {
+      "category": "Spam",
+      "priority": "Low",
+      "note": "Likely spam or unsolicited",
+      "match": {
+        "subject_keywords": ["you've won", "congratulations you", "claim your prize", "free gift", "act now", "limited time offer", "make money fast", "work from home"]
+      }
+    },
+    {
+      "category": "Internal",
+      "priority": "Medium",
+      "note": "Message from within your own domain",
+      "match": {
+        "sender_contains": []
+      }
+    }
+  ]
+}
