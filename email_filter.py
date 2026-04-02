@@ -9,10 +9,10 @@ Usage:
     python email_filter.py
 
     Optional flags:
-        --limit N       Process only the N most recent emails (default: 100)
+        --limit N       Max emails to process; 0 = all (default: 0 = all)
         --folder FOLDER IMAP folder to read from (default: INBOX)
         --output FILE   Output Excel filename (default: email_report.xlsx)
-        --since DAYS    Only fetch emails from the last N days (default: 30)
+        --since DAYS    Only fetch emails from last N days; 0 = all history (default: 0 = all)
         --rules FILE    Path to rules JSON file (default: email_rules.json)
 """
 
@@ -104,21 +104,31 @@ def get_body(msg: email.message.Message) -> str:
 def fetch_emails(
     conn: imaplib.IMAP4_SSL,
     folder: str = "INBOX",
-    limit: int = 100,
-    since_days: int = 30,
+    limit: int = 0,
+    since_days: int = 0,
 ) -> list:
-    """Fetch the most recent emails from a folder and return as list of dicts."""
+    """Fetch emails from a folder and return as list of dicts.
+
+    limit=0 means no limit (fetch all).
+    since_days=0 means no date filter (fetch all history).
+    """
     conn.select(folder, readonly=True)
 
-    since_date = (datetime.now() - timedelta(days=since_days)).strftime("%d-%b-%Y")
-    status, data = conn.search(None, f'(SINCE "{since_date}")')
+    if since_days > 0:
+        since_date = (datetime.now() - timedelta(days=since_days)).strftime("%d-%b-%Y")
+        status, data = conn.search(None, f'(SINCE "{since_date}")')
+    else:
+        status, data = conn.search(None, "ALL")
+
     if status != "OK":
         print(f"No messages found in {folder}.")
         return []
 
     message_ids = data[0].split()
-    # Most recent first
-    message_ids = message_ids[-limit:][::-1]
+    # Most recent first; apply limit if set
+    if limit > 0:
+        message_ids = message_ids[-limit:]
+    message_ids = message_ids[::-1]
     print(f"Fetching {len(message_ids)} emails from {folder}...")
 
     emails = []
@@ -365,8 +375,8 @@ def parse_args():
     parser.add_argument(
         "--limit",
         type=int,
-        default=100,
-        help="Maximum number of recent emails to process (default: 100).",
+        default=0,
+        help="Maximum number of emails to process. 0 = no limit, fetch all (default: 0).",
     )
     parser.add_argument(
         "--folder",
@@ -381,9 +391,9 @@ def parse_args():
     parser.add_argument(
         "--since",
         type=int,
-        default=30,
+        default=0,
         metavar="DAYS",
-        help="Only fetch emails from the last N days (default: 30).",
+        help="Only fetch emails from the last N days. 0 = no date filter, fetch all history (default: 0).",
     )
     parser.add_argument(
         "--rules",
