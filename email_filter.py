@@ -195,12 +195,21 @@ def _keywords_match(text: str, keywords: list) -> bool:
     return any(kw.lower() in text_lower for kw in keywords)
 
 
+def _regex_match(text: str, patterns: list) -> bool:
+    """Return True if any regex pattern matches in text (case-insensitive)."""
+    for pattern in patterns:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True
+    return False
+
+
 def categorize_email(em: dict, rules: dict) -> dict:
     """Apply rules to a single email and set category, priority, and note."""
     subject = em.get("subject", "")
     sender = em.get("sender", "")
     body = em.get("body", "")
     sender_domain = _extract_sender_domain(sender)
+    full_text = f"{subject} {body}"
 
     for rule in rules.get("rules", []):
         match_cfg = rule.get("match", {})
@@ -226,6 +235,11 @@ def categorize_email(em: dict, rules: dict) -> dict:
         if not matched and body_kws and _keywords_match(body, body_kws):
             matched = True
 
+        # Regex match across subject + body
+        regex_patterns = match_cfg.get("regex", [])
+        if not matched and regex_patterns and _regex_match(full_text, regex_patterns):
+            matched = True
+
         if matched:
             em["category"] = rule.get("category", "Other")
             em["priority"] = rule.get("priority", "Medium")
@@ -233,17 +247,33 @@ def categorize_email(em: dict, rules: dict) -> dict:
             return em
 
     # No rule matched — use defaults
-    em["category"] = rules.get("default_category", "Other")
-    em["priority"] = rules.get("default_priority", "Medium")
+    em["category"] = rules.get("default_category", "Ignored")
+    em["priority"] = rules.get("default_priority", "Low")
     em["note"] = ""
     return em
 
 
 def categorize_all(emails: list, rules: dict) -> list:
-    """Categorize all emails using the loaded rules."""
+    """Categorize all emails, then sort by date and drop ignored ones."""
     print(f"Categorizing {len(emails)} emails using rules...")
     for em in emails:
         categorize_email(em, rules)
+
+    # Drop emails that matched nothing relevant
+    before = len(emails)
+    emails = [em for em in emails if em.get("category") != "Ignored"]
+    ignored = before - len(emails)
+    if ignored:
+        print(f"  Skipped {ignored} irrelevant emails.")
+
+    # Sort by date ascending (oldest → newest) so sheets read chronologically
+    def _sort_key(em):
+        try:
+            return datetime.strptime(em["date"], "%Y-%m-%d %H:%M")
+        except Exception:
+            return datetime.min
+
+    emails.sort(key=_sort_key)
     return emails
 
 
@@ -392,9 +422,9 @@ def parse_args():
     parser.add_argument(
         "--since",
         type=int,
-        default=0,
+        default=60,
         metavar="DAYS",
-        help="Only fetch emails from the last N days. 0 = no date filter, fetch all history (default: 0).",
+        help="Only fetch emails from the last N days. 0 = no date filter, fetch all history (default: 60).",
     )
     parser.add_argument(
         "--rules",
